@@ -3,14 +3,6 @@
 
 // Posts configuration - add new posts here
 const POSTS = [
-	{
-        id: 'docker-best-practices',
-        title: 'Docker Best Practices for DevOps',
-        date: '2025-08-15',
-        timestamp: '2025-08-15T05:18:35.182Z',
-        tags: ['Docker', 'DevOps', 'Containers'],
-        excerpt: '5 essential practices that will save you time and headaches'
-    },
     {
         id: 'aws-free-tier-infrastructure',
         title: 'Building Enterprise Infrastructure on AWS Free Tier',
