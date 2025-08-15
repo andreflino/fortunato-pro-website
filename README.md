@@ -115,6 +115,9 @@ aws dynamodb create-table \
   --billing-mode PAY_PER_REQUEST \
   --region us-east-1
 
+# Update config/site.yaml with your actual bucket name
+# Change "andreflino-terraform-state" to your bucket name
+
 # Deploy it (the moment of truth)
 cd terraform
 terraform init

@@ -4,6 +4,11 @@ domain: fortunato.pro                # Your third-party domain
 environment: production              # production, staging, or development
 repository: andreflino/fortunato-pro-website  # UPDATE THIS WITH YOUR GITHUB REPO!
 
+# Terraform state management (bucket created manually)
+terraform:
+  state_bucket_name: "fortunato-pro-terraform-state"  # Your manually created bucket name
+  lock_table_name: "terraform-locks"               # Your manually created DynamoDB table
+
 # Third-Party Domain Configuration
 domain_config:
   use_custom_ssl: false              # true = custom SSL cert (+$0.50/month), false = CloudFront SSL (FREE)

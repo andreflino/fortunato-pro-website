@@ -45,78 +45,113 @@ resource "aws_iam_role" "github_actions" {
   })
 }
 
-# IAM Policy for GitHub Actions (least privilege)
+# IAM Policy for GitHub Actions (comprehensive permissions)
 resource "aws_iam_policy" "github_actions" {
   name        = "${local.site_name}-github-actions-policy"
-  description = "Least privilege policy for GitHub Actions deployment"
+  description = "Policy for GitHub Actions deployment with Terraform state access"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # S3 Website Bucket Access
       {
-        Sid    = "S3BucketAccess"
+        Sid    = "S3WebsiteBucketAccess"
         Effect = "Allow"
         Action = [
-          "s3:ListBucket",
-          "s3:GetBucketLocation",
-          "s3:GetBucketVersioning",
-          "s3:GetBucketPolicy",
-          "s3:PutBucketPolicy",
-          "s3:GetBucketPublicAccessBlock",
-          "s3:PutBucketPublicAccessBlock"
+          "s3:*"
         ]
-        Resource = aws_s3_bucket.website.arn
-      },
-      {
-        Sid    = "S3ObjectAccess"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:GetObjectVersion"
+        Resource = [
+          aws_s3_bucket.website.arn,
+          "${aws_s3_bucket.website.arn}/*"
         ]
-        Resource = "${aws_s3_bucket.website.arn}/*"
       },
+      # CloudFront Access
       {
         Sid    = "CloudFrontAccess"
         Effect = "Allow"
         Action = [
-          "cloudfront:GetDistribution",
-          "cloudfront:GetDistributionConfig",
-          "cloudfront:UpdateDistribution",
-          "cloudfront:CreateDistribution",
-          "cloudfront:TagResource",
-          "cloudfront:CreateOriginAccessControl",
-          "cloudfront:GetOriginAccessControl",
-          "cloudfront:CreateInvalidation",
-          "cloudfront:GetInvalidation",
-          "cloudfront:ListDistributions",
-          "cloudfront:ListOriginAccessControls",
-          "cloudfront:CreateResponseHeadersPolicy",
-          "cloudfront:GetResponseHeadersPolicy",
-          "cloudfront:UpdateResponseHeadersPolicy"
+          "cloudfront:*"
         ]
         Resource = "*"
       },
+      # CloudWatch Access
       {
         Sid    = "CloudWatchAccess"
         Effect = "Allow"
         Action = [
-          "cloudwatch:PutMetricAlarm",
-          "cloudwatch:DeleteAlarms",
-          "cloudwatch:DescribeAlarms"
+          "cloudwatch:*",
+          "logs:*"
         ]
         Resource = "*"
       },
+      # IAM Access (for managing roles and policies)
       {
-        Sid    = "IAMReadAccess"
+        Sid    = "IAMAccess"
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:GetOpenIDConnectProvider",
+          "iam:ListOpenIDConnectProviders",
+          "iam:CreateRole",
+          "iam:CreatePolicy",
+          "iam:CreateOpenIDConnectProvider",
+          "iam:TagRole",
+          "iam:TagPolicy",
+          "iam:TagOpenIDConnectProvider",
+          "iam:PutRolePolicy",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:PassRole",
+          "iam:UpdateRole",
+          "iam:UpdateOpenIDConnectProviderThumbprint"
+        ]
+        Resource = [
+          "arn:aws:iam::*:role/${local.site_name}-*",
+          "arn:aws:iam::*:oidc-provider/token.actions.githubusercontent.com",
+          "arn:aws:iam::*:policy/${local.site_name}-*"
+        ]
+      },
+      # General AWS Access
+      {
+        Sid    = "GeneralAWSAccess"
         Effect = "Allow"
         Action = [
           "sts:GetCallerIdentity",
-          "iam:GetRole",
-          "iam:GetOpenIDConnectProvider",
-          "iam:ListOpenIDConnectProviders"
+          "sts:TagSession"
+        ]
+        Resource = "*"
+      },
+      # Budgets and Cost Management
+      {
+        Sid    = "BudgetsAccess"
+        Effect = "Allow"
+        Action = [
+          "budgets:*",
+          "ce:*"
+        ]
+        Resource = "*"
+      },
+      # Route53 (for DNS)
+      {
+        Sid    = "Route53Access"
+        Effect = "Allow"
+        Action = [
+          "route53:*"
+        ]
+        Resource = "*"
+      },
+      # ACM (for SSL certificates)
+      {
+        Sid    = "ACMAccess"
+        Effect = "Allow"
+        Action = [
+          "acm:*"
         ]
         Resource = "*"
       }
