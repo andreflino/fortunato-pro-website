@@ -1,0 +1,171 @@
+name: Deploy Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '*.html'
+      - 'css/**'
+      - 'js/**'
+      - 'posts/**'
+      - 'config/site.yaml'
+      - 'terraform/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: '1.5.0'
+        terraform_wrapper: false
+
+    - name: Configure AWS
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+        role-session-name: GitHubActions
+        aws-region: us-east-1
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Plan and Safety Check
+      id: plan
+      run: |
+        cd terraform
+        
+        # Create plan file
+        terraform plan -out=tfplan -no-color
+        
+        # Show plan for logging
+        echo "=== TERRAFORM PLAN ==="
+        terraform show -no-color tfplan
+        echo "======================="
+        
+        # Check for destructive operations
+        PLAN_OUTPUT=$(terraform show -no-color tfplan)
+        
+        # Count operations
+        TO_ADD=$(echo "$PLAN_OUTPUT" | grep -c "will be created" || echo "0")
+        TO_CHANGE=$(echo "$PLAN_OUTPUT" | grep -c "will be updated" || echo "0")
+        TO_DESTROY=$(echo "$PLAN_OUTPUT" | grep -c "will be destroyed" || echo "0")
+        
+        echo " Terraform Plan Summary:"
+        echo "  Resources to add: $TO_ADD"
+        echo "  Resources to change: $TO_CHANGE"
+        echo "  Resources to destroy: $TO_DESTROY"
+        
+        # Export for next steps
+        echo "to_add=$TO_ADD" >> $GITHUB_OUTPUT
+        echo "to_change=$TO_CHANGE" >> $GITHUB_OUTPUT
+        echo "to_destroy=$TO_DESTROY" >> $GITHUB_OUTPUT
+        
+        # Safety check - fail if destroying resources
+        if [ "$TO_DESTROY" -gt 0 ]; then
+          echo " ERROR: Plan includes $TO_DESTROY resource(s) to be DESTROYED!"
+          echo ""
+          echo " Stopping deployment for safety."
+          echo " Resources to be destroyed:"
+          echo "$PLAN_OUTPUT" | grep -A 1 -B 1 "will be destroyed" || true
+          echo ""
+          echo " If this is intentional, you can:"
+          echo "   1. Review the plan carefully"
+          echo "   2. Apply manually with: terraform apply"
+          echo "   3. Or add 'ALLOW_DESTROY' to commit message to override"
+          exit 1
+        fi
+        
+        # Check if no changes
+        if [ "$TO_ADD" -eq 0 ] && [ "$TO_CHANGE" -eq 0 ] && [ "$TO_DESTROY" -eq 0 ]; then
+          echo " No infrastructure changes needed"
+          echo "skip_apply=true" >> $GITHUB_OUTPUT
+        else
+          echo " Infrastructure changes detected - will apply"
+          echo "skip_apply=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Check for Override
+      id: override
+      run: |
+        # Check if commit message contains override
+        COMMIT_MSG="${{ github.event.head_commit.message }}"
+        if echo "$COMMIT_MSG" | grep -qi "ALLOW_DESTROY"; then
+          echo "  ALLOW_DESTROY found in commit message - overriding safety check"
+          echo "override_destroy=true" >> $GITHUB_OUTPUT
+        else
+          echo "override_destroy=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Terraform Apply
+      if: steps.plan.outputs.skip_apply == 'false' && (steps.plan.outputs.to_destroy == '0' || steps.override.outputs.override_destroy == 'true')
+      run: |
+        cd terraform
+        
+        if [ "${{ steps.plan.outputs.to_destroy }}" -gt 0 ] && [ "${{ steps.override.outputs.override_destroy }}" = "true" ]; then
+          echo "  PROCEEDING WITH DESTRUCTIVE CHANGES (override enabled)"
+        fi
+        
+        echo " Applying Terraform plan..."
+        terraform apply -auto-approve tfplan
+
+    - name: Get outputs
+      id: terraform
+      run: |
+        cd terraform
+        echo "website_url=$(terraform output -raw website_url)" >> $GITHUB_OUTPUT
+        echo "distribution_id=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+        echo "s3_bucket=$(terraform output -raw s3_bucket_name)" >> $GITHUB_OUTPUT
+
+    - name: Upload website files to S3
+      run: |
+        # Upload all website files to S3
+        aws s3 sync . s3://${{ steps.terraform.outputs.s3_bucket }}/ \
+          --exclude "terraform/*" \
+          --exclude ".git/*" \
+          --exclude ".github/*" \
+          --exclude "config/*" \
+          --exclude "scripts/*" \
+          --exclude "README.md" \
+          --exclude ".gitignore" \
+          --delete
+
+    - name: Invalidate CloudFront
+      if: steps.terraform.outputs.distribution_id != ''
+      run: |
+        aws cloudfront create-invalidation \
+          --distribution-id ${{ steps.terraform.outputs.distribution_id }} \
+          --paths "/*"
+
+    - name: Test website
+      run: |
+        sleep 30
+        curl -f ${{ steps.terraform.outputs.website_url }} || echo "Site may need a few minutes to propagate"
+
+    - name: Summary
+      run: |
+        echo "## 🎉 Deployment Summary"
+        echo ""
+        echo "**Infrastructure Changes:**"
+        echo "- Resources added: ${{ steps.plan.outputs.to_add }}"
+        echo "- Resources changed: ${{ steps.plan.outputs.to_change }}"
+        echo "- Resources destroyed: ${{ steps.plan.outputs.to_destroy }}"
+        echo ""
+        echo "**Website:** ${{ steps.terraform.outputs.website_url }}"
+        
+        if [ "${{ steps.plan.outputs.skip_apply }}" = "true" ]; then
+          echo ""
+          echo " No infrastructure changes were needed"
+        fi

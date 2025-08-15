@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortunato.pro - DevOps & Infrastructure</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/blog.css">
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <a href="index.html" class="logo">fortunato.pro</a>
+            <div class="nav-right">
+                <ul class="nav-links">
+                    <li><a href="#home">Home</a></li>
+                    <li><a href="#about">About</a></li>
+                    <li><a href="#projects">Projects</a></li>
+                    <li><a href="#contact">Contact</a></li>
+                </ul>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <h1>DevOps Engineer</h1>
+                <p class="subtitle">Building infrastructure, sharing knowledge, solving problems</p>
+            </div>
+        </section>
+
+        <div class="container">
+            <div class="blog-container">
+                <main class="main-content">
+                    <!-- Posts will be dynamically loaded here -->
+                    <div class="loading">
+                        <p>Loading posts...</p>
+                    </div>
+                </main>
+
+                <aside class="sidebar">
+                    <div class="sidebar-section">
+                        <h3>About</h3>
+                        <p class="about-text">
+                            DevOps engineer focused on practical, cost-effective solutions. 
+                            I write about infrastructure, automation, and the things I learn while building stuff.
+                        </p>
+                        <div class="social-links">
+                            <a href="https://github.com/yourusername">GitHub</a>
+                            <a href="https://linkedin.com/in/yourusername">LinkedIn</a>
+                            <a href="mailto:hello@fortunato.pro">Email</a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>Recent Posts</h3>
+                        <ul class="recent-posts">
+                            <!-- Will be populated dynamically -->
+                            <li class="loading">Loading...</li>
+                        </ul>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>Filter by Tag</h3>
+                        <div class="tags">
+                            <!-- Will be populated dynamically -->
+                            <span class="loading">Loading tags...</span>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>This Site</h3>
+                        <p class="about-text">
+                            Built with AWS Free Tier, deployed via Terraform, costs $0-2/month. 
+                            <a href="https://github.com/yourusername/fortunato-pro-website" style="color: var(--accent);">View source</a>
+                        </p>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </main>
+
+    <footer id="contact">
+        <div class="container">
+            <p>&copy; 2024 fortunato.pro - Built with AWS Free Tier</p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="js/theme.js"></script>
+    <script src="js/posts.js"></script>
+</body>
+</html>

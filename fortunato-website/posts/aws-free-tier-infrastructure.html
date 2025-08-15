@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building Enterprise Infrastructure on AWS Free Tier - Fortunato.pro</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/article.css">
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <a href="../index.html" class="logo">fortunato.pro</a>
+            <div class="nav-right">
+                <ul class="nav-links">
+                    <li><a href="../index.html">Home</a></li>
+                    <li><a href="../index.html#about">About</a></li>
+                    <li><a href="../index.html#projects">Projects</a></li>
+                    <li><a href="../index.html#contact">Contact</a></li>
+                </ul>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container article">
+        <article class="article-container">
+            <a href="../index.html" class="back-link">← Back to blog</a>
+            
+            <header class="article-header">
+                <div class="article-meta">
+                    <span>Dec 15, 2024</span>
+                    <span class="article-tag">AWS</span>
+                    <span class="article-tag">Terraform</span>
+                    <span class="article-tag">DevOps</span>
+                </div>
+                <h1 class="article-title">Building Enterprise Infrastructure on AWS Free Tier</h1>
+                <p class="article-subtitle">How I built this website with enterprise-grade features for under $2/month</p>
+            </header>
+
+            <div class="article-content">
+                <p>When I decided to build my personal website, I had a few requirements: it needed to be fast, secure, scalable, and cheap. Like, really cheap. After working with enterprise infrastructure that costs thousands per month, I wanted to prove you could get similar performance for almost nothing.</p>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number">$0-2</div>
+                        <div class="stat-label">Monthly cost</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">&lt;2s</div>
+                        <div class="stat-label">Global load time</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">99.9%</div>
+                        <div class="stat-label">Uptime SLA</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">200+</div>
+                        <div class="stat-label">CDN locations</div>
+                    </div>
+                </div>
+
+                <p>The result? This website runs on AWS Free Tier with the same infrastructure patterns I use for enterprise applications. Global CDN, HTTPS, automated deployments, cost monitoring, and Infrastructure as Code.</p>
+
+                <h2>The Architecture</h2>
+
+                <p>The setup is surprisingly simple but covers all the enterprise basics:</p>
+
+                <ul>
+                    <li><strong>S3 Static Website</strong> - Hosts the actual files</li>
+                    <li><strong>CloudFront CDN</strong> - Global content delivery and HTTPS</li>
+                    <li><strong>GitHub Actions</strong> - Automated CI/CD pipeline</li>
+                    <li><strong>OIDC Authentication</strong> - Secure AWS access without stored credentials</li>
+                    <li><strong>Terraform</strong> - Infrastructure as Code</li>
+                    <li><strong>CloudWatch</strong> - Cost monitoring and alerts</li>
+                </ul>
+
+                <div class="callout">
+                    <h4>Why This Matters</h4>
+                    <p>This isn't just about saving money. It's about proving that modern DevOps practices don't require enterprise budgets. The same patterns that work for million-dollar infrastructures work at small scale too.</p>
+                </div>
+
+                <h2>The Implementation</h2>
+
+                <p>The entire deployment is automated. When I push changes to GitHub, the site is live globally in about 2 minutes:</p>
+
+                <div class="code-block">
+<span class="highlight"># Edit content</span>
+nano index.html
+
+<span class="highlight"># Deploy automatically</span>
+git add .
+git commit -m "new blog post"
+git push origin main
+
+<span class="highlight"># Live in 2 minutes across 200+ edge locations</span>
+✅ CloudFront invalidation complete
+✅ Site updated globally
+                </div>
+
+                <h3>Security First</h3>
+
+                <p>One thing I'm particularly proud of is the security setup. No AWS credentials are stored in GitHub. Instead, I use OIDC (OpenID Connect) to let GitHub Actions assume an AWS role temporarily. This is the same pattern enterprise companies use for zero-trust deployments.</p>
+
+                <div class="code-block">
+<span class="highlight"># GitHub Actions can assume this role</span>
+resource "aws_iam_role" "github_actions" {
+  name = "${var.site_name}-github-actions"
+  
+  assume_role_policy = jsonencode({
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.github.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/main"
+        }
+      }
+    }]
+  })
+}
+                </div>
+
+                <h3>Cost Optimization</h3>
+
+                <p>The AWS Free Tier is incredibly generous if you know how to use it:</p>
+
+                <ul>
+                    <li><strong>S3</strong> - 5GB storage, 20,000 GET requests/month</li>
+                    <li><strong>CloudFront</strong> - 50GB data transfer, 2 million requests/month</li>
+                    <li><strong>Lambda</strong> - 1M requests/month (for future features)</li>
+                    <li><strong>Route 53</strong> - 1 million queries/month for hosted zones</li>
+                </ul>
+
+                <p>Even after the first year, costs stay minimal. My estimates show $2-4/month for a site that could handle millions of page views.</p>
+
+                <h2>Lessons Learned</h2>
+
+                <p>Building this taught me more about AWS than most tutorials. You have to understand the service limits, optimize for cost, and think about real-world operational concerns like monitoring and alerting.</p>
+
+                <div class="callout">
+                    <h4>The Real Value</h4>
+                    <p>This project isn't just a website - it's a portfolio piece that demonstrates real DevOps skills. The infrastructure patterns here scale to enterprise applications, and the cost optimization mindset is valuable everywhere.</p>
+                </div>
+
+                <h3>What's Next</h3>
+
+                <p>I'm planning to add:</p>
+                <ul>
+                    <li>Contact form using Lambda and SES</li>
+                    <li>Blog search functionality</li>
+                    <li>Analytics with CloudWatch and Grafana</li>
+                    <li>Automated security scanning</li>
+                </ul>
+
+                <p>All while staying within free tier limits, of course.</p>
+
+                <h2>Try It Yourself</h2>
+
+                <p>The entire setup is open source and documented. If you want to build something similar, check out the <a href="https://github.com/yourusername/fortunato-pro-website" style="color: var(--accent);">GitHub repository</a>. The README walks through the complete setup process.</p>
+
+                <p>Building infrastructure that performs like enterprise systems but costs almost nothing isn't just a fun challenge - it's a valuable skill. Whether you're a startup watching every dollar or an enterprise looking to optimize costs, these patterns apply everywhere.</p>
+            </div>
+        </article>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 fortunato.pro - Built with AWS Free Tier</p>
+        </div>
+    </footer>
+
+    <script src="../js/theme.js"></script>
+</body>
+</html>

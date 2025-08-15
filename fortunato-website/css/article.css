@@ -1,0 +1,130 @@
+/* Article Page Specific Styles */
+
+/* Container for article pages */
+.container.article {
+    max-width: 800px;
+}
+
+/* Article Layout */
+.article-container {
+    padding: 40px 0;
+    /* Ensure content doesn't overlap header */
+    position: relative;
+    z-index: 1;
+}
+
+.article-header {
+    margin-bottom: 40px;
+}
+
+.article-meta {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.article-title {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    line-height: 1.2;
+}
+
+.article-subtitle {
+    font-size: 20px;
+    color: var(--text-secondary);
+    font-weight: 300;
+}
+
+/* Article Content */
+.article-content {
+    line-height: 1.7;
+    /* Ensure proper stacking */
+    position: relative;
+    z-index: 1;
+}
+
+.article-content h2 {
+    font-size: 24px;
+    margin: 40px 0 16px 0;
+    color: var(--text-primary);
+    /* Prevent overlap with sticky header */
+    position: relative;
+    z-index: 1;
+}
+
+.article-content h3 {
+    font-size: 20px;
+    margin: 32px 0 12px 0;
+    color: var(--text-primary);
+    position: relative;
+    z-index: 1;
+}
+
+.article-content p {
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+}
+
+.article-content ul, 
+.article-content ol {
+    margin: 16px 0;
+    padding-left: 32px;
+    color: var(--text-secondary);
+}
+
+.article-content li {
+    margin-bottom: 8px;
+}
+
+.article-content strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.article-content a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.article-content a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+/* Stats Grid for Articles */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 32px 0;
+}
+
+/* Article Code Blocks */
+.article-content .code-block {
+    padding: 20px;
+    margin: 24px 0;
+}
+
+/* Article Responsive Design */
+@media (max-width: 768px) {
+    .article-title {
+        font-size: 28px;
+    }
+    
+    .article-subtitle {
+        font-size: 18px;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .article-content ul,
+    .article-content ol {
+        padding-left: 24px;
+    }
+}

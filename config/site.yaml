@@ -1,0 +1,61 @@
+# Basic Information
+name: fortunato-pro                  # Your site name (lowercase, no spaces)
+domain: fortunato.pro                # Your third-party domain
+environment: production              # production, staging, or development
+repository: andreflino/fortunato-pro-website  # UPDATE THIS WITH YOUR GITHUB REPO!
+
+# Third-Party Domain Configuration
+domain_config:
+  use_custom_ssl: false              # true = custom SSL cert (+$0.50/month), false = CloudFront SSL (FREE)
+  include_www: true                  # Handle both domain.com and www.domain.com
+  dns_provider: "namecheap"          # For documentation (godaddy, namecheap, google, cloudflare, etc.)
+
+# Performance Settings - FREE TIER OPTIMIZED
+cdn:
+  enabled: true                      # Use CloudFront (FREE: 1TB transfer/month for 12 months)
+  cache_duration: 24h                # Longer cache = less origin requests = FREE
+  price_class: minimal               # Use only US/Canada/Europe edge locations (cheapest)
+
+# Security Settings (secure defaults)
+security:
+  https_only: true                  # Always redirect HTTP to HTTPS
+  security_headers: true            # Add protection against common attacks
+  
+# Storage Settings - FREE TIER OPTIMIZED
+storage:
+  versioning: true                  # Keep old versions (FREE: first 5GB for 12 months)
+  backup_retention: 30              # Days to keep backups
+  lifecycle_enabled: true           # Auto-delete old versions to stay in free tier
+
+# Cost Management - FREE TIER FOCUS
+cost:
+  monthly_budget: 5                 # Alert if monthly cost exceeds $5 (should be $0-2)
+  free_tier_optimized: true         # Use settings optimized for AWS free tier
+
+# Deployment Settings
+github:
+  auto_deploy_branch: main          # Branch that triggers deployment
+  require_approval: false           # Set to true for production sites with multiple contributors
+
+# Setup Instructions for Third-Party Domain:
+# 
+# STEP 1: Deploy this infrastructure first
+#   terraform apply
+#
+# STEP 2: Get your CloudFront URL
+#   terraform output website_url
+#   Example: https://d1234567890123.cloudfront.net
+#
+# STEP 3: Configure DNS at your domain provider:
+#   Type: CNAME
+#   Name: @ (for root domain)
+#   Value: d1234567890123.cloudfront.net
+#   
+#   Type: CNAME  
+#   Name: www
+#   Value: d1234567890123.cloudfront.net
+#
+# STEP 4: Wait 5-30 minutes for DNS propagation
+#   Test: https://yourdomain.com should load your site
+#
+# Expected monthly cost: $0-2 (stays in AWS free tier)
