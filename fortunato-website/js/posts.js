@@ -6,7 +6,7 @@ const POSTS = [
     {
         id: 'aws-free-tier-infrastructure',
         title: 'Building Enterprise Infrastructure on AWS Free Tier',
-        date: '2024-12-15',
+        date: '2025-08-15',
         tags: ['AWS', 'Terraform', 'DevOps'],
         excerpt: 'How I built this website with enterprise-grade features for under $2/month using AWS Free Tier, Terraform, and GitHub Actions. Complete with global CDN, HTTPS, automated deployments, and cost monitoring.',
         stats: [
@@ -25,28 +25,28 @@ git push  # Live globally in 2 minutes`
     {
         id: 'kubernetes-development',
         title: 'Setting Up Local Kubernetes Development',
-        date: '2024-11-28',
+        date: '2025-07-28',
         tags: ['Kubernetes', 'Docker'],
         excerpt: 'A practical guide to setting up a local Kubernetes cluster for development. Using kind, kubectl, and some helpful scripts to make container development less painful.'
     },
     {
         id: 'github-actions-security',
         title: 'GitHub Actions Security Best Practices',
-        date: '2024-11-15',
+        date: '2025-06-15',
         tags: ['CI/CD', 'GitHub Actions'],
         excerpt: 'Lessons learned from implementing OIDC authentication and secure CI/CD pipelines. No more stored secrets, better security, and easier credential management.'
     },
     {
         id: 'cost-effective-monitoring',
         title: 'Cost-Effective Monitoring with Grafana',
-        date: '2024-10-22',
+        date: '2025-05-22',
         tags: ['Monitoring', 'Grafana'],
         excerpt: 'Building comprehensive monitoring without breaking the budget. Using Grafana Cloud\'s free tier and AWS CloudWatch to monitor everything that matters.'
     },
     {
         id: 'terraform-state-management',
         title: 'Terraform State Management Best Practices',
-        date: '2024-10-08',
+        date: '2025-04-08',
         tags: ['Terraform', 'DevOps'],
         excerpt: 'Managing Terraform state across teams and environments. Remote backends, locking, and strategies for avoiding state conflicts in production.'
     }
