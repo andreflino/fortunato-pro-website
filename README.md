@@ -125,8 +125,8 @@ terraform apply
 Set up GitHub Actions:
 1. Go to your repo Settings → Secrets and variables → Actions
 2. Add variable `AWS_ROLE_ARN` with the ARN from terraform output
-3. Watch the magic happen
 
+3. Watch the magic happen
 Now you can deploy:
 
 ```bash
@@ -140,6 +140,7 @@ git push
 
 # Wait 2 minutes, grab coffee, it's live
 ```
+
 
 ## Daily workflow
 
