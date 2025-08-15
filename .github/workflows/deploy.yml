@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - '*.html'
-      - 'css/**'
-      - 'js/**'
-      - 'posts/**'
+      - 'fortunato-website/*.html'
+      - 'fortunato-website/css/**'
+      - 'fortunato-website/js/**'
+      - 'fortunato-website/posts/**'
       - 'config/site.yaml'
       - 'terraform/**'
 
@@ -132,7 +132,7 @@ jobs:
     - name: Upload website files to S3
       run: |
         # Upload all website files to S3
-        aws s3 sync . s3://${{ steps.terraform.outputs.s3_bucket }}/ \
+        aws s3 sync fortunato-website/ s3://${{ steps.terraform.outputs.s3_bucket }}/ \
           --exclude "terraform/*" \
           --exclude ".git/*" \
           --exclude ".github/*" \
