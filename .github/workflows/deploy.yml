@@ -47,14 +47,14 @@ jobs:
         DESTROY_COUNT=$(echo "$PLAN_OUTPUT" | grep -c "will be destroyed" || echo "0")
         
         if [ "$DESTROY_COUNT" -gt 0 ]; then
-          echo "🚨 WARNING: $DESTROY_COUNT resource(s) will be DESTROYED!"
+          echo " WARNING: $DESTROY_COUNT resource(s) will be DESTROYED!"
           echo "$PLAN_OUTPUT" | grep -A 1 -B 1 "will be destroyed"
           
           if [[ "${{ github.event.head_commit.message }}" != *"ALLOW_DESTROY"* ]]; then
-            echo "❌ Add 'ALLOW_DESTROY' to commit message to proceed"
+            echo " Add 'ALLOW_DESTROY' to commit message to proceed"
             exit 1
           else
-            echo "⚠️ ALLOW_DESTROY found - proceeding with destructive changes"
+            echo " ALLOW_DESTROY found - proceeding with destructive changes"
           fi
         fi
 
@@ -75,7 +75,7 @@ jobs:
 
     - name: Upload Website Files
       run: |
-        echo "📤 Uploading website files to S3..."
+        echo " Uploading website files to S3..."
         aws s3 sync fortunato-website/ s3://${{ steps.terraform.outputs.s3_bucket }}/ \
           --delete \
           --exclude "*.md"
@@ -83,31 +83,31 @@ jobs:
     - name: Invalidate CloudFront Cache
       if: steps.terraform.outputs.distribution_id != ''
       run: |
-        echo "🔄 Invalidating CloudFront cache..."
+        echo " Invalidating CloudFront cache..."
         aws cloudfront create-invalidation \
           --distribution-id ${{ steps.terraform.outputs.distribution_id }} \
           --paths "/*"
 
     - name: Test Website
       run: |
-        echo "🧪 Testing website..."
+        echo " Testing website..."
         sleep 10
         
         URL="${{ steps.terraform.outputs.website_url }}"
         if curl -f -s "$URL" > /dev/null; then
-          echo "✅ Website is accessible: $URL"
+          echo " Website is accessible: $URL"
         else
-          echo "⚠️ Website may still be propagating: $URL"
+          echo " Website may still be propagating: $URL"
         fi
 
     - name: Summary
       run: |
-        echo "## ✅ Deployment Complete!"
+        echo "## Deployment Complete!"
         echo ""
         echo "**Website URL:** ${{ steps.terraform.outputs.website_url }}"
         echo "**S3 Bucket:** ${{ steps.terraform.outputs.s3_bucket }}"
         echo ""
-        echo "🌐 **DNS Setup:**"
+        echo "**DNS Setup:**"
         echo "Point your domain DNS to: \`$(echo '${{ steps.terraform.outputs.website_url }}' | sed 's|https://||')\`"
         echo ""
         echo "**CNAME Records:**"
