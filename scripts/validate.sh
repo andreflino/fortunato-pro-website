@@ -69,8 +69,8 @@ if ! echo "development staging production" | grep -q "$ENVIRONMENT"; then
 fi
 
 # Check if HTML file exists
-if [ ! -f "index.html" ]; then
-    echo " index.html not found"
+if [ ! -f "./fortunato-website/index.html" ]; then
+    echo " ./fortunato-website/index.html not found"
     ERRORS=$((ERRORS + 1))
 fi
 

@@ -41,33 +41,51 @@ output "environment" {
   value       = local.environment
 }
 
-output "domain_instructions" {
-  description = "Instructions for setting up your third-party domain"
-  value = <<-EOT
-    
-    DOMAIN SETUP INSTRUCTIONS:
-    
-    1. Copy this CloudFront URL: ${local.config.cdn.enabled ? aws_cloudfront_distribution.website[0].domain_name : "Direct S3 hosting"}
-    
-    2. Go to your domain provider (${local.config.domain_config.dns_provider}) DNS settings
-    
-    3. Add these DNS records:
-       Type: CNAME
-       Name: @ (for root domain)
-       Value: ${local.config.cdn.enabled ? aws_cloudfront_distribution.website[0].domain_name : aws_s3_bucket.website.bucket}.s3-website-${local.aws_region}.amazonaws.com
-       
-       Type: CNAME  
-       Name: www
-       Value: ${local.config.cdn.enabled ? aws_cloudfront_distribution.website[0].domain_name : aws_s3_bucket.website.bucket}.s3-website-${local.aws_region}.amazonaws.com
-    
-    4. Wait 5-30 minutes for DNS propagation
-    
-    5. Test: https://${local.domain} should load your site
-    
-    Your site will have FREE HTTPS and global CDN! 🚀
-  EOT
+
+output "certificate_validation_records" {
+  description = "DNS records needed for SSL certificate validation - add these to Cloudflare"
+  value = {
+    for record in aws_acm_certificate.website.domain_validation_options : record.domain_name => {
+      type  = record.resource_record_type
+      name  = record.resource_record_name
+      value = record.resource_record_value
+    }
+  }
 }
 
+output "ssl_certificate_arn" {
+  description = "ARN of the SSL certificate"
+  value       = aws_acm_certificate.website.arn
+}
+
+output "domain_setup_instructions" {
+  description = "Complete domain setup instructions with SSL"
+  value = <<EOT
+
+DOMAIN SETUP INSTRUCTIONS:
+
+1. ADD THESE DNS RECORDS TO CLOUDFLARE:
+
+   SSL Certificate Validation (REQUIRED FIRST):
+   ${join("\n   ", [for domain, record in {
+     for r in aws_acm_certificate.website.domain_validation_options : r.domain_name => {
+       type  = r.resource_record_type
+       name  = r.resource_record_name
+       value = r.resource_record_value
+     }
+   } : "Type: ${record.type} | Name: ${record.name} | Value: ${record.value}"])}
+
+2. WAIT FOR CERTIFICATE VALIDATION:
+   - Certificate validation can take 5-30 minutes
+   - CloudFront deployment takes 10-15 minutes after validation
+   - Total setup time: 15-45 minutes
+
+3. TEST YOUR SITE:
+   - https://${local.domain}
+   - https://www.${local.domain}
+
+EOT
+}
 output "cost_summary" {
   description = "Monthly cost summary"
   value = {

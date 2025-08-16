@@ -2,6 +2,15 @@
 # Clean Terraform configuration for static website - FREE TIER OPTIMIZED
 terraform {
   required_version = ">= 1.0"
+  
+  backend "s3" {
+    bucket         = "fortunato-pro-terraform-state"  # Create this first
+    key            = "fortunato-pro/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    #dynamodb_table = "terraform-locks"  # For state locking
+  }
+  
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -50,8 +59,19 @@ locals {
   }
 }
 
+# Default provider
 provider "aws" {
   region = local.aws_region
+  default_tags {
+    tags = local.tags
+  }
+}
+
+# Provider for us-east-1 (required for CloudFront certificates)
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+  
   default_tags {
     tags = local.tags
   }
@@ -62,6 +82,37 @@ resource "random_string" "bucket_suffix" {
   length  = 8
   special = false
   upper   = false
+}
+
+# SSL Certificate for CloudFront (must be in us-east-1)
+resource "aws_acm_certificate" "website" {
+  provider = aws.us_east_1  # CloudFront requires certificates in us-east-1
+  
+  domain_name               = local.domain
+  subject_alternative_names = ["www.${local.domain}"]
+  validation_method         = "DNS"
+  
+  lifecycle {
+    create_before_destroy = true
+  }
+  
+  tags = merge(local.tags, {
+    Name = "SSL Certificate for ${local.domain}"
+  })
+}
+
+# Certificate validation (you'll need to add these DNS records to Cloudflare manually)
+resource "aws_acm_certificate_validation" "website" {
+  provider = aws.us_east_1
+  
+  certificate_arn = aws_acm_certificate.website.arn
+  
+  # Note: Since you're using Cloudflare for DNS, you'll need to manually add
+  # the validation records to Cloudflare. Terraform will output these for you.
+  
+  timeouts {
+    create = "10m"
+  }
 }
 
 # S3 Bucket for website hosting
@@ -110,17 +161,17 @@ resource "aws_s3_bucket_lifecycle_configuration" "website" {
   }
 }
 
-# S3 Bucket public access (required for website hosting)
+# S3 Bucket public access (SECURE - block all public access)
 resource "aws_s3_bucket_public_access_block" "website" {
   bucket = aws_s3_bucket.website.id
   
-  block_public_acls       = false
-  block_public_policy     = false
-  ignore_public_acls      = false
-  restrict_public_buckets = false
+  block_public_acls       = true   # Block public ACLs
+  block_public_policy     = true   # Block public bucket policies
+  ignore_public_acls      = true   # Ignore existing public ACLs
+  restrict_public_buckets = true   # Restrict public bucket policies
 }
 
-# S3 Bucket policy for public read access
+# S3 Bucket policy for CloudFront Origin Access Control ONLY
 resource "aws_s3_bucket_policy" "website" {
   bucket = aws_s3_bucket.website.id
   depends_on = [aws_s3_bucket_public_access_block.website]
@@ -128,28 +179,26 @@ resource "aws_s3_bucket_policy" "website" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Sid       = "PublicReadGetObject"
+      Sid       = "AllowCloudFrontServicePrincipal"
       Effect    = "Allow"
-      Principal = "*"
-      Action    = "s3:GetObject"
-      Resource  = "${aws_s3_bucket.website.arn}/*"
+      Principal = {
+        Service = "cloudfront.amazonaws.com"
+      }
+      Action   = "s3:GetObject"
+      Resource = "${aws_s3_bucket.website.arn}/*"
+      Condition = {
+        StringEquals = {
+          "AWS:SourceArn" = "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:distribution/${aws_cloudfront_distribution.website[0].id}"
+        }
+      }
     }]
   })
 }
 
-# S3 Bucket website configuration
-resource "aws_s3_bucket_website_configuration" "website" {
-  bucket = aws_s3_bucket.website.id
+# Data source to get current AWS account ID
+data "aws_caller_identity" "current" {}
 
-  index_document {
-    suffix = "index.html"
-  }
-  error_document {
-    key = "index.html"
-  }
-}
-
-# CloudFront Origin Access Control (free tier: 1TB transfer/month)
+# CloudFront Origin Access Control (secure S3 access)
 resource "aws_cloudfront_origin_access_control" "website" {
   count = local.config.cdn.enabled ? 1 : 0
   
@@ -169,10 +218,10 @@ resource "aws_cloudfront_response_headers_policy" "security_headers" {
     strict_transport_security {
       access_control_max_age_sec = 31536000
       include_subdomains         = true
-      override                   = true  # Add this line
+      override                   = true
     }
     content_type_options {
-      override = true  # This was missing
+      override = true
     }
     frame_options {
       frame_option = "DENY"
@@ -185,34 +234,37 @@ resource "aws_cloudfront_response_headers_policy" "security_headers" {
   }
 }
 
-# CloudFront Distribution (FREE TIER OPTIMIZED)
+# CloudFront Distribution with SSL Certificate and Custom Domains
 resource "aws_cloudfront_distribution" "website" {
   count = local.config.cdn.enabled ? 1 : 0
-  
+
+  # Add custom domain aliases
+  aliases = [
+    local.domain,
+    "www.${local.domain}"
+  ]
+
   origin {
     domain_name              = aws_s3_bucket.website.bucket_regional_domain_name
     origin_access_control_id = aws_cloudfront_origin_access_control.website[0].id
-    origin_id                = "S3-${aws_s3_bucket.website.id}"
+    origin_id                = "S3-${local.site_name}"
   }
 
   enabled             = true
   is_ipv6_enabled     = true
-  default_root_object = "index.html"
-  comment             = "${local.site_name} - FREE TIER OPTIMIZED"
-  
+  comment             = "CloudFront distribution for ${local.domain}"
+  default_root_object = "index.html"  # This fixes the 403 error!
+
   # FREE TIER: PriceClass_100 (US, Canada, Europe only - cheapest)
   price_class = local.cloudfront_price_class
 
   # Cache behavior optimized for free tier
   default_cache_behavior {
-    allowed_methods        = ["GET", "HEAD"]  # Reduced methods to minimize costs
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "S3-${aws_s3_bucket.website.id}"
+    target_origin_id       = "S3-${local.site_name}"
     compress               = true
-    viewer_protocol_policy = local.config.security.https_only ? "redirect-to-https" : "allow-all"
-
-    # Add security headers if enabled
-    response_headers_policy_id = local.config.security.security_headers ? aws_cloudfront_response_headers_policy.security_headers[0].id : null
+    viewer_protocol_policy = "redirect-to-https"
 
     forwarded_values {
       query_string = false
@@ -221,18 +273,26 @@ resource "aws_cloudfront_distribution" "website" {
       }
     }
 
+    # Security headers policy
+    response_headers_policy_id = local.config.security.security_headers ? aws_cloudfront_response_headers_policy.security_headers[0].id : null
+
     # Longer cache times = fewer origin requests = stays in free tier
-    min_ttl     = 86400    # 1 day minimum
+    min_ttl     = 0
     default_ttl = local.cache_seconds
-    max_ttl     = 31536000 # 1 year maximum
+    max_ttl     = 86400
   }
 
-  # Custom error responses for SPA
+  # Custom error pages for SPA behavior
   custom_error_response {
     error_code         = 404
     response_code      = 200
     response_page_path = "/index.html"
-    error_caching_min_ttl = 300
+  }
+
+  custom_error_response {
+    error_code         = 403
+    response_code      = 200
+    response_page_path = "/index.html"
   }
 
   restrictions {
@@ -241,10 +301,15 @@ resource "aws_cloudfront_distribution" "website" {
     }
   }
 
+  # SSL Certificate configuration
   viewer_certificate {
-    cloudfront_default_certificate = true
-    minimum_protocol_version       = "TLSv1"
+    acm_certificate_arn      = aws_acm_certificate.website.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
+
+  # Wait for certificate validation
+  depends_on = [aws_acm_certificate_validation.website]
 
   wait_for_deployment = true
 }
@@ -264,16 +329,5 @@ resource "aws_cloudwatch_metric_alarm" "cost_alert" {
 
   dimensions = {
     Currency = "USD"
-  }
-}
-
-# Remote state handle
-terraform {
-  backend "s3" {
-    bucket         = "fortunato-pro-terraform-state"  # Create this first
-    key            = "fortunato-pro/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    #dynamodb_table = "terraform-locks"  # For state locking
   }
 }
