@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure retiring the default outbound access for VMs - Fortunato.pro</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/article.css">
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <a href="../index.html" class="logo">fortunato.pro</a>
+            <div class="nav-right">
+                <ul class="nav-links">
+                    <li><a href="../index.html">Home</a></li>
+                    <li><a href="../index.html#about">About</a></li>
+                    <li><a href="../index.html#projects">Projects</a></li>
+                    <li><a href="../index.html#contact">Contact</a></li>
+                </ul>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container article">
+        <article class="article-container">
+            <a href="../index.html" class="back-link">← Back to blog</a>
+            
+            <header class="article-header">
+                <div class="article-meta">
+                    <span>Aug 21, 2025</span>
+                    <span class="article-tag">Azure</span>
+                    <span class="article-tag">CloudComputing</span>
+                    <span class="article-tag">Networking</span>
+                    <span class="article-tag">CloudSecurity</span>
+                    <span class="article-tag">ClodMigration</span>
+                </div>
+                <h1 class="article-title">Azure retiring the default outbound access for VMs</h1>
+                <p class="article-subtitle">Azure will be retiring the default outbound access for VMs on September 30, 2025.</p>
+            </header>
+
+            <div class="article-content">
+                <p>If your virtual machines currently rely on default outbound access, they will continue to function for now.
+                Any VMs created after September 30, 2025, will not have default outbound access.
+
+                To be honest, that is great because I always liked AWS’s approach better,every instance has an explicit outbound path. Azure is now aligning to it, which makes networking more predictable, secure, and aligned with best practices.
+                <div class="announcement-box">
+                    📢 <strong>Official Announcement:</strong>  
+                    <a href="https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/default-outbound-access" target="_blank">
+                        Read the Microsoft Documentation
+                    </a>
+                </div>        
+                <h2>Recommendation</h2>
+                
+                <p>I recommend reviewing your workloads that rely on default outbound access.
+                Plan the migration to NAT Gateway or another explicit outbound method.
+                Implement the new configuration, updating your IaC (yes, please. IaC always) before the retirement date to avoid disruptions.</p>
+
+                <p>You’ll need to configure an explicit outbound method like:</p>
+                
+                <ul>
+                    <li>NAT Gateway</li>
+                    <li>Public IP / Load Balancer</li>
+                    <li>Azure Firewall</li>
+                </ul>
+
+                <div class="callout">
+                    <h4>Pro Tip</h4>
+                    <p>Even if your current workloads are safe until Sept 30, 2025, I recommend standardizing on NAT Gateway now for outbound traffic in new VNets.</p>
+                </div>
+            </div>
+        </article>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 fortunato.pro - Built with AWS Free Tier</p>
+        </div>
+    </footer>
+
+    <script src="../js/theme.js"></script>
+</body>
+</html>

@@ -4,6 +4,14 @@
 // Posts configuration - add new posts here
 const POSTS = [
     {
+        id: 'azure-default-outbound',
+        title: 'Azure retiring the default outbound access for VMs',
+        date: '2025-08-21',
+        timestamp: '2025-08-21T17:17:11.709Z',
+        tags: ['Azure', 'CloudComputing', 'Networking', 'CloudSecurity'],
+        excerpt: 'Azure will be retiring the default outbound access for VMs on September 30, 2025.'
+    },
+    {
         id: 'aws-free-tier-infrastructure',
         title: 'Building Enterprise Infrastructure on AWS Free Tier',
         date: '2025-08-15',
@@ -15,12 +23,12 @@ const POSTS = [
             { label: 'Global CDN', icon: '🌍' }
         ],
         codeSnippet: `# Deploy this entire site
-./scripts/validate.sh
-terraform init && terraform apply
+        ./scripts/validate.sh
+        terraform init && terraform apply
 
-# Update content and deploy
-git add . && git commit -m "new post"
-git push  # Live globally in 2 minutes`
+        # Update content and deploy
+        git add . && git commit -m "new post"
+        git push  # Live globally in 2 minutes`
     },
     {
         id: 'kubernetes-development',
