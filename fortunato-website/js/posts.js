@@ -4,6 +4,14 @@
 // Posts configuration - add new posts here
 const POSTS = [
     {
+        id: 'homelab-rebuild-proxmox-zfs',
+        title: 'From a Dead NAS to a Hardened Media Stack: A Homelab Rebuild',
+        date: '2026-09-14',
+        timestamp: '2026-09-14T01:41:16.069Z',
+        tags: ['Homelab', 'Proxmox', 'ZFS', 'Docker', 'SelfHosted'],
+        excerpt: 'How a failed Synology VM update turned into a full homelab rebuild - ZFS storage, a live VM migration between Proxmox hosts, a brutal I/O bottleneck diagnosis, and a reverse proxy with two genuinely obscure bugs along the way.'
+    },
+    {
         id: 'azure-default-outbound',
         title: 'Azure retiring the default outbound access for VMs',
         date: '2025-08-21',

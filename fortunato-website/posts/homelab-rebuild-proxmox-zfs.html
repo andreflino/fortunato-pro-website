@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>From a Dead NAS to a Hardened Media Stack: A Homelab Rebuild - Fortunato.pro</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/article.css">
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <a href="../index.html" class="logo">fortunato.pro</a>
+            <div class="nav-right">
+                <ul class="nav-links">
+                    <li><a href="../index.html">Home</a></li>
+                    <li><a href="../index.html#about">About</a></li>
+                    <li><a href="../index.html#projects">Projects</a></li>
+                    <li><a href="../index.html#contact">Contact</a></li>
+                </ul>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container article">
+        <article class="article-container">
+            <a href="../index.html" class="back-link">← Back to blog</a>
+            
+            <header class="article-header">
+                <div class="article-meta">
+                    <span>Sep 13, 2026</span>
+                    <span class="article-tag">Homelab</span>
+                    <span class="article-tag">Proxmox</span>
+                    <span class="article-tag">ZFS</span>
+                    <span class="article-tag">Docker</span>
+                    <span class="article-tag">SelfHosted</span>
+                </div>
+                <h1 class="article-title">From a Dead NAS to a Hardened Media Stack: A Homelab Rebuild</h1>
+                <p class="article-subtitle">A failed Synology VM update turned into a full storage redesign, a live migration, a mystery performance bug, and a lesson about private-tracker ratios I didn't see coming</p>
+            </header>
+
+            <div class="article-content">
+                <p>I started this session trying to check disk space on my home NAS. I ended it having rebuilt half my homelab. That's usually how the good ones go.</p>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number">77%→2%</div>
+                        <div class="stat-label">I/O wait after the real fix</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">0s</div>
+                        <div class="stat-label">downtime migrating the media VM</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">180GB</div>
+                        <div class="stat-label">backed up in 46 minutes</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">7</div>
+                        <div class="stat-label">indexers behind one reverse proxy</div>
+                    </div>
+                </div>
+
+                <h2>The setup</h2>
+
+                <p>Two Proxmox hosts on the home network: one running a Media-Server VM (Radarr, Sonarr, Prowlarr, Bazarr, qBittorrent, Jellyfin, Plex, plus a full observability stack crammed on for good measure), the other running an Xpenology VM — Synology's DSM, virtualized on non-Synology hardware — as the actual NAS.</p>
+
+                <p>The Xpenology VM is the one that started this whole thing.</p>
+
+                <h2>When the NAS died</h2>
+
+                <p>DSM had tried to auto-update itself to version 7.3. The bootloader (Arc Loader, a Redpill-based loader that lets DSM run on generic hardware) didn't have config support for that combination of model and DSM version yet. Ramdisk patch failed, the loader dropped into a recovery shell, and the whole thing entered a loop — silently drifting its own IP address in the process, which is how I first noticed something was wrong.</p>
+
+                <p>What followed was a genuine debugging saga: updating the loader itself, discovering the update kept failing because <code>/tmp</code> (sized off the VM's RAM) was filling up with stale build artifacts, fighting a keyboard-layout mismatch in the browser console that made typing <code>/</code> impossible, and eventually landing on the real suspect — a likely kexec incompatibility between the emulated model's decade-old platform kernel and the actual 2024-era CPU underneath it.</p>
+
+                <div class="callout">
+                    <h4>Lesson</h4>
+                    <p>Xpenology on very new CPU silicon is a real risk. Check community compatibility threads for your specific CPU generation before committing to it — or just run genuine hardware / TrueNAS instead of virtualizing a decade-old kernel on top of silicon it was never built for.</p>
+                </div>
+
+                <h2>Starting over with ZFS</h2>
+
+                <p>Rather than keep fighting the loader, I cut losses: destroyed the Xpenology VM, wiped the passthrough disk, and built a proper ZFS pool instead.</p>
+
+                <div class="code-block">
+<span class="highlight"># Single disk today, mirror-ready for later</span>
+zpool create -f nasdata /dev/sda
+
+<span class="highlight"># Carve out a quota'd dataset for the media VM</span>
+zfs create -o quota=1T nasdata/mediaserver
+                </div>
+
+                <p>Structuring it this way means when a second disk shows up, <code>zpool attach</code> turns it into a live RAID1 mirror with zero downtime — a lot cleaner than mdadm's degraded-array dance.</p>
+
+                <h2>Migrating a live service</h2>
+
+                <p>The actual Media-Server VM needed to move onto this new box without losing anything. The two Proxmox hosts aren't clustered, so no live migration — an offline backup/restore instead:</p>
+
+                <div class="code-block">
+<span class="highlight"># Stream the backup straight to the other host, no local disk needed</span>
+vzdump 111 --mode stop --compress zstd --stdout | \
+  ssh proxmox-nas "cat > /nasdata/mediaserver/vm-111-backup.vma.zst"
+                </div>
+
+                <p><code>--mode stop</code> sounds scarier than it is — Proxmox only pauses the VM for about 17 seconds (a snapshot-consistent freeze) before resuming it and streaming the backup in the background. 180GB, 46 minutes, essentially zero perceived downtime.</p>
+
+                <p>Then I hit a genuinely obscure bug: <code>qmrestore</code> failed with <code>couldn't determine archive info</code> on a file I could prove was 100% valid. Turns out its archive-info parser expects Proxmox's own backup filename convention (<code>vzdump-qemu-&lt;vmid&gt;-&lt;timestamp&gt;.vma</code>) — a custom filename silently fails detection even when the content is perfect. Renamed the file, restore worked immediately.</p>
+
+                <p>Restored with a fresh MAC address so the new copy could boot alongside the still-running original for verification, then did the actual cutover: shut down the original, matched the new VM's MAC to it (the guest's network config was static and tied to the MAC), and it reclaimed the exact same LAN IP with zero downstream reconfiguration.</p>
+
+                <h2>The real bottleneck</h2>
+
+                <p>Everything felt sluggish afterward. First instinct was CPU — stopped the whole monitoring/CI stack that had been riding along on the same VM, since it wasn't earning its keep there anyway. That helped, but not enough.</p>
+
+                <p><code>top</code> told the real story: <strong>77% I/O wait.</strong> The physical disk backing everything was a single 7200RPM spinning drive, and it was serving double duty as both the VM's OS disk (Docker, SQLite databases, systemd, logs — all small random I/O) <em>and</em> the live qBittorrent download/seeding traffic. Mixing random OS I/O with torrent I/O on a spinning disk is a recipe for seek thrashing.</p>
+
+                <div class="code-block">
+<span class="highlight"># Live-move the OS disk to fast storage, VM stays running throughout</span>
+qm disk move 111 scsi0 local-lvm
+                </div>
+
+                <p>OS disk moved to the host's NVMe-backed storage; the large media/download data stayed on the spinning disk, where sequential bulk storage actually belongs. I/O wait dropped to under 2% instantly.</p>
+
+                <div class="callout">
+                    <h4>Lesson</h4>
+                    <p>Separate your system disk from your bulk storage disk — especially if the bulk disk is spinning rust and anything on it does small random writes. Torrent clients and databases are exactly the workloads that will ruin an HDD's day.</p>
+                </div>
+
+                <h2>Locking it down</h2>
+
+                <p>With performance sorted, I went through and actually hardened the stack: blocked executable file extensions at the download-client level, added a release-profile blocklist in Radarr/Sonarr for known fake-release tags, set minimum file sizes per quality tier, and wrote a small cron script to auto-remove and blocklist anything stuck "stalled" for 72+ hours.</p>
+
+                <p>Also found — and fixed — a qBittorrent category pointing at a path that didn't correspond to any actual mount. It hadn't caused a problem yet, but the first time it triggered, files would have silently landed inside the container's ephemeral filesystem instead of anywhere persisted. A landmine worth defusing before it went off.</p>
+
+                <h2>A reverse proxy, and two real bugs</h2>
+
+                <p>Wanted friendly URLs for every service instead of remembering a dozen ports. Traefik was already sitting in the stack, so I wired it up with Docker-label routing and subdomains under a private domain, resolved through the Pi-hole already running on the network.</p>
+
+                <p>Getting there surfaced two bugs that had nothing to do with my config:</p>
+
+                <ul>
+                    <li><strong>Traefik itself was broken</strong> before I even touched it. Docker 29 raised its minimum supported API version, and Traefik's client defaulted to a version so old it no longer worked — and didn't respect the usual environment-variable override. Only genuinely fixed in a specific later patch release, so a straight version bump wasn't enough; had to jump twice.</li>
+                    <li><strong>Traefik was non-deterministically picking the wrong Docker network</strong> for backends that sit on two networks at once. Some services proxied fine, others returned <code>504</code> because Traefik tried routing to a subnet it had no route to. Fixed with an explicit network label on every routed service, removing the ambiguity entirely.</li>
+                </ul>
+
+                <p>Plex stayed off the proxy — it needs host networking for local discovery, which can't cleanly join a second Docker network, and it has its own remote-access system anyway.</p>
+
+                <h2>The ratio lesson nobody warns you about</h2>
+
+                <div class="callout">
+                    <h4>A quick disclaimer</h4>
+                    <p>BitTorrent is a protocol, not a crime — it's just an efficient way to move data, and plenty of legitimate uses run on it (Linux ISOs, game patches, open datasets, and the public-domain/self-hosted content this stack is built for). Piracy is a different thing, and it's illegal. Be smart, know your local laws, and follow the rules.</p>
+                </div>
+
+                <p>Got access to a private tracker and wanted it as the primary indexer. Set its priority to the top in Prowlarr, expecting that to settle it. It didn't — Sonarr kept grabbing lower-quality releases from public trackers instead.</p>
+
+                <p>Turns out indexer priority is a very weak, late-stage tiebreaker in Sonarr/Radarr's scoring — it only matters when releases are otherwise nearly identical. The actual fix was toggling Automatic Search off on the public indexers, leaving only the private tracker for automatic grabs.</p>
+
+                <p>Which is when it stopped grabbing anything at all. Chased what looked like a Prowlarr bug — a cryptic "invalid torrent file" parse error — all the way down to curling the tracker directly with my own session cookie, bypassing every proxy layer in between. The tracker's actual response:</p>
+
+                <div class="code-block">
+<span class="highlight"># What the tracker actually said, once I stopped trusting the proxy's error message</span>
+"Your ratio is dangerously low: 0.198 — You do not have permission to Download"
+                </div>
+
+                <p>Not a bug anywhere in the stack. Just an account that had downloaded a lot more than it had ever seeded back — made worse by qBittorrent silently capping seed time at 60 hours, cutting torrents off long before they'd built up any real upload credit.</p>
+
+                <div class="callout">
+                    <h4>Lesson</h4>
+                    <p>A scraper-based indexer proxy will happily surface a cryptic parse error for what is actually a plain-English rejection from the source. When something fails mysteriously through a proxy, go straight to the source with the same credentials before assuming the proxy is broken.</p>
+                </div>
+
+                <p>Removed the seeding cap, enabled freeleech-only as a safety net, and left the public indexers back on as a working fallback while the ratio recovers the honest way — by seeding.</p>
+
+                <h2>Where it stands now</h2>
+
+                <ul>
+                    <li>ZFS pool on the old NAS box, mirror-ready for a second disk, ready to take on real redundancy</li>
+                    <li>OS storage and media storage split across fast and bulk disks — the way it should have been from the start</li>
+                    <li>Seven indexers behind Prowlarr, Cloudflare-protected ones included</li>
+                    <li>A hardened, automated Radarr/Sonarr/qBittorrent setup instead of a pile of defaults</li>
+                    <li>A reverse proxy that actually works, with real DNS instead of memorized ports</li>
+                </ul>
+
+                <p>None of this started as a project. It started as "let me just check disk space real quick." If your homelab has taught you anything, it's that there's no such thing as "real quick."</p>
+            </div>
+        </article>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 fortunato.pro - Built with AWS Free Tier</p>
+        </div>
+    </footer>
+
+    <script src="../js/theme.js"></script>
+</body>
+</html>
