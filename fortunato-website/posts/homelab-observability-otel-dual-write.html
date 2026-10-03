@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I Built a Fake Shop in My Homelab to Watch It Break (On Purpose) - Fortunato.pro</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/article.css">
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <a href="../index.html" class="logo">fortunato.pro</a>
+            <div class="nav-right">
+                <ul class="nav-links">
+                    <li><a href="../index.html">Home</a></li>
+                    <li><a href="../index.html#about">About</a></li>
+                    <li><a href="../index.html#projects">Projects</a></li>
+                    <li><a href="../index.html#contact">Contact</a></li>
+                </ul>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container article">
+        <article class="article-container">
+            <a href="../index.html" class="back-link">← Back to blog</a>
+
+            <header class="article-header">
+                <div class="article-meta">
+                    <span>Oct 3, 2026</span>
+                    <span class="article-tag">Homelab</span>
+                    <span class="article-tag">OpenTelemetry</span>
+                    <span class="article-tag">Observability</span>
+                    <span class="article-tag">Kafka</span>
+                    <span class="article-tag">SystemDesign</span>
+                </div>
+                <h1 class="article-title">I Built a Fake Shop in My Homelab to Watch It Break (On Purpose)</h1>
+                <p class="article-subtitle">End-to-end tracing with OpenTelemetry, a slow query hiding in two million rows, a cache, a queue, Kafka, and the classic "dual write" bug that quietly loses your users' emails</p>
+            </header>
+
+            <div class="article-content">
+                <p>Most people use their homelab to run Plex. I also run Plex. But at some point you look at two little Proxmox boxes humming in the corner and think: <em>what if I built a tiny online shop, wired it with the same observability tools big companies use, and then broke it in every way I could think of?</em></p>
+
+                <p>That's this post. No cloud bill, no pager, no angry customers. Just a fake shop that sells keyboards to a robot, and a lot of graphs.</p>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number">19</div>
+                        <div class="stat-label">containers on one 4 GB VM</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">1 trace</div>
+                        <div class="stat-label">from a web click to an email, across 3 services</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">85ms → &lt;1ms</div>
+                        <div class="stat-label">one index, one slow query fixed</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">0</div>
+                        <div class="stat-label">lost emails once the outbox pattern went in</div>
+                    </div>
+                </div>
+
+                <h2>What a homelab is actually good for</h2>
+
+                <p>A homelab is a place where breaking production is <strong>encouraged</strong>. Mine is nothing fancy: a mini-STX box with a 2017 i5 and 20 GB of RAM, and a tiny Intel N150 mini PC that's mostly a NAS. Both run Proxmox. Neither will win any awards.</p>
+
+                <p>And yet on that hardware I'm running a monitoring stack that's architecturally the same thing you'd find at a mid-size company:</p>
+
+                <ul>
+                    <li><strong>Prometheus</strong> for metrics (numbers over time: requests per second, latency, queue size)</li>
+                    <li><strong>Loki</strong> for logs (the text your apps print when they're happy or sad)</li>
+                    <li><strong>Tempo</strong> for traces (the story of a single request as it travels through the system)</li>
+                    <li><strong>Grafana</strong> to look at all three in one place, and jump between them</li>
+                </ul>
+
+                <p>Every server in the house ships metrics and logs to it, including both Proxmox hosts (with SMART disk health, because that old Seagate isn't getting any younger). But monitoring servers is the boring part. The fun part is monitoring an <em>application</em>. So I built one.</p>
+
+                <h2>Meet the shop</h2>
+
+                <p>It's a small event-driven system: a handful of Python services that talk to each other through HTTP, a queue, and an event log. Here's the whole thing:</p>
+
+<pre class="code-block"><span class="highlight"># Orders</span>
+loadgen ─▶ web ─▶ api ─▶ RabbitMQ ─▶ worker ─▶ Kafka ─┬─▶ notifier
+                   │  ▲                  │            └─▶ analytics ─▶ Redis
+                   ▼  │ cache            │
+               Postgres ◀── Redis ◀──────┘ (invalidate)
+
+<span class="highlight"># Signups (the dual-write lab, more on this later)</span>
+web ─▶ signup ─▶ Postgres (users + outbox) ─▶ outbox-relay ─▶ Kafka ─▶ email-service ─▶ inbox
+
+<span class="highlight"># Telemetry</span>
+every service ─▶ OpenTelemetry Collector ─▶ Tempo + Loki, and Prometheus scrapes it</pre>
+
+                <p>In plain words:</p>
+
+                <ul>
+                    <li><strong>web</strong> is a very ugly HTML page where you place orders. Beauty was not a requirement.</li>
+                    <li><strong>api</strong> is a Flask API. It saves the order in <strong>Postgres</strong> and drops a "please process this" message into <strong>RabbitMQ</strong>.</li>
+                    <li><strong>worker</strong> picks the message up, "charges the card" (it sleeps for a bit, very realistic), updates the order, and announces the result on <strong>Kafka</strong>.</li>
+                    <li><strong>notifier</strong> and <strong>analytics</strong> both listen to Kafka. One pretends to email the customer, the other keeps a "top sellers" ranking in <strong>Redis</strong>.</li>
+                    <li><strong>loadgen</strong> is a robot that shops 24/7, so there's always something to look at. It's my best customer. It has never paid.</li>
+                </ul>
+
+                <p>To keep things interesting, I added some sabotage: about 5% of orders get rejected by the API, 10% of payments get "declined", and there's a <em>Slow queries</em> button on the page that makes the database take a nap of 500 ms or 2 seconds before answering.</p>
+
+                <h2>OpenTelemetry in 60 seconds</h2>
+
+                <p>A <strong>trace</strong> is the full journey of one request. It's made of <strong>spans</strong>: each span is one step ("handle HTTP request", "run this SQL query", "publish to Kafka") with a start time, a duration, and some details attached.</p>
+
+                <p>The magic trick is <strong>context propagation</strong>. When the web service calls the API, it adds a header that says "hey, you're part of trace <code>4bf92f...</code>, your parent is span <code>00f067...</code>". The header looks like this:</p>
+
+<pre class="code-block">traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+             ^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^ ^^
+       version  trace id (the whole journey)     parent span id   sampled</pre>
+
+                <p>The API passes it along to RabbitMQ (inside the message headers), the worker reads it and passes it to Kafka, and so on. Every service adds its spans to the same trace. At the end you get one waterfall that shows the <em>entire</em> life of a click.</p>
+
+                <p>The best part: I wrote almost none of that code. Python's OpenTelemetry has <strong>zero-code instrumentation</strong>. Instead of <code>python api.py</code> you run:</p>
+
+<pre class="code-block">opentelemetry-instrument python api.py</pre>
+
+                <p>and it automatically patches Flask, requests, the Postgres driver, Redis, RabbitMQ, Kafka and logging. Configuration is just environment variables (<code>OTEL_SERVICE_NAME=api</code>, where to send the data, and so on). Every log line also gets the trace ID stamped on it, which is what makes the "jump from a log line to its trace" button in Grafana work.</p>
+
+                <h2>Example 1: following one order from click to Kafka</h2>
+
+                <p>Here's a real trace from the shop, simplified. One order, six services, one waterfall:</p>
+
+<pre class="code-block">loadgen        POST /order
+└─ web         POST /order
+   └─ web      POST  → api
+      └─ api   POST /orders
+         ├─ api      INSERT orders                    <span class="highlight">(Postgres)</span>
+         ├─ api      INSERT order_events
+         └─ api      orders send                      <span class="highlight">(RabbitMQ)</span>
+            └─ worker   orders receive
+               └─ worker   process_order
+                  ├─ charge_payment                   <span class="highlight">(pretend payment provider)</span>
+                  ├─ reserve_stock → SELECT ...
+                  ├─ UPDATE orders
+                  ├─ DEL cache:order:…                <span class="highlight">(Redis)</span>
+                  └─ order-events send                <span class="highlight">(Kafka)</span>
+                     ├─ notifier    send_email
+                     └─ analytics   update_stats → ZINCRBY</pre>
+
+                <p>When one of those 10% "payment declined" orders fails, the <code>process_order</code> span turns red. Click it, hit <em>Logs for this span</em>, and Grafana shows you the exact log line: <code>order failed id=1ae71708 reason=payment_declined</code>. Click that log's <em>View trace</em> button and you're back. That back-and-forth between logs and traces is the moment observability stops being a buzzword and starts being useful.</p>
+
+                <p>Tempo also builds a <strong>service graph</strong> from the traces, a live map of who talks to whom. I never drew that map. The system drew it for me by watching itself.</p>
+
+                <h2>Example 2: the slow query hiding in two million rows</h2>
+
+                <p>Every order has a history table, <code>order_events</code>. I stuffed it with two million rows of junk and "forgot" to add an index on <code>order_id</code>. So every time someone opens an order page, Postgres reads all two million rows to find the three that matter. Like looking for your keys by emptying every drawer in the house, every single time.</p>
+
+                <p>What's nice is that the same problem shows up in three independent places:</p>
+
+                <ul>
+                    <li><strong>In the trace:</strong> one <code>SELECT</code> span is ~85 ms while everything around it takes about 1 ms. It sticks out like a sore thumb, and the span tells you the exact SQL.</li>
+                    <li><strong>In the metrics:</strong> Postgres's <code>pg_stat_statements</code> (exported to Prometheus) ranks that query as the top time-eater.</li>
+                    <li><strong>In the logs:</strong> Postgres logs every query slower than 50 ms, and those logs land in Loki.</li>
+                </ul>
+
+                <p>The fix is one line:</p>
+
+<pre class="code-block">CREATE INDEX ON order_events (order_id);</pre>
+
+                <p>85 ms to under a millisecond. The trace span basically disappears. There is no feeling in software quite like fixing a performance problem with one line, and I recommend you engineer situations where you get to feel it.</p>
+
+                <h2>Example 3: Redis, the cache that remembers (sometimes too much)</h2>
+
+                <p>Next I put Redis in front of the order page using the <strong>cache-aside</strong> pattern, which is a fancy name for "check the fridge before going to the supermarket":</p>
+
+                <ol>
+                    <li>Look for the order in Redis.</li>
+                    <li>If it's there (a <em>hit</em>), return it. Done.</li>
+                    <li>If not (a <em>miss</em>), ask Postgres, save the answer in Redis for 30 seconds, and return it.</li>
+                </ol>
+
+                <p>The order page now tells you where the answer came from: <em>"Served from database in 123 ms"</em> the first time, <em>"Served from cache in 4 ms"</em> the second time. There's an on/off switch, hit and miss counters, and a <code>cache.hit</code> attribute on the trace span.</p>
+
+                <p>The tricky part of caching is never the caching. It's knowing when your cached copy is a lie. When the worker finishes an order, it deletes that order from Redis (<em>invalidation</em>). Comment that one line out and you get the classic bug: the page proudly shows "pending" for an order that completed 20 seconds ago. Everybody has shipped this bug at least once. Now you can ship it at home, safely.</p>
+
+                <p>Redis also does a second job here: the analytics service keeps a live "top sellers" ranking in a Redis <em>sorted set</em>. That data must never be thrown away, so Redis is configured to only evict keys that have an expiry (the cache), never the ranking. One setting, <code>volatile-lru</code>, and a whole category of "where did my data go?" disappears.</p>
+
+                <h2>Queue vs. log: RabbitMQ and Kafka are not the same thing</h2>
+
+                <p>I use both on purpose, because people mix them up all the time.</p>
+
+                <ul>
+                    <li><strong>RabbitMQ is a to-do list.</strong> "Process order 42." One worker takes the task, does it, crosses it off. The message is gone.</li>
+                    <li><strong>Kafka is a newspaper.</strong> "Order 42 was completed." It's printed once, and <em>everyone</em> who subscribes gets their own copy, reading at their own pace. The notifier and the analytics service each read every event, independently.</li>
+                </ul>
+
+                <p>That difference matters when things go wrong. Stop the notifier for two minutes and Kafka just remembers where it stopped reading. Its <strong>consumer lag</strong> (how far behind it is) climbs in Grafana while analytics keeps up perfectly. Start it again and it catches up from exactly where it left off. Nothing lost, nobody else affected. Try that with a to-do list.</p>
+
+                <h2>The main event: the dual-write problem</h2>
+
+                <p>This is the part I really wanted to build, because it's one of those bugs that hides in almost every system and almost nobody notices until a customer complains.</p>
+
+                <p>Imagine a signup flow. When someone signs up, two things must happen:</p>
+
+                <ol>
+                    <li>Save the user in the database.</li>
+                    <li>Send a "please confirm your email" event to Kafka, so the email service sends the email.</li>
+                </ol>
+
+                <p>Two writes, to two different systems. And here's the catch: <strong>there is no transaction that covers both</strong>. Postgres can't roll back a Kafka message, and Kafka can't roll back a database row. So if your process crashes between the two writes (a deploy, an out-of-memory kill, a network blip), they disagree <em>forever</em>.</p>
+
+                <p>It's like texting your friend "I'm on my way!" and then your car doesn't start. Your friend is waiting. Your car is not coming. Nobody is happy.</p>
+
+                <p>I built a signup service with three modes, a fake inbox (Mailpit) to receive the emails, and a "crash between the two writes" button. Here's what happened.</p>
+
+                <h3>Mode 1: save the user, then publish</h3>
+
+<pre class="code-block">INSERT user; COMMIT        <span class="highlight">✓ user saved</span>
+💥 crash
+publish to Kafka           <span class="highlight">✗ never happens</span></pre>
+
+                <p>The user exists but the email never goes out. They can never confirm their account. They'll try again, get "email already registered", and go buy from your competitor. I call this a <strong>lost email</strong>. With a 100% crash rate, 3 signups gave me 3 users sitting in the database who will never hear from me.</p>
+
+                <h3>Mode 2: publish first, then save the user</h3>
+
+                <p>"Easy, just swap the order!" Nope.</p>
+
+<pre class="code-block">publish to Kafka           <span class="highlight">✓ email on its way</span>
+💥 crash
+INSERT user                <span class="highlight">✗ never happens</span></pre>
+
+                <p>Now the email arrives, the user clicks the link, and gets <em>"Account does not exist"</em>. A <strong>ghost email</strong>. Swapping the order doesn't fix a dual write. It just changes which way it breaks.</p>
+
+                <h3>Mode 3: the transactional outbox</h3>
+
+                <p>The fix is a well-known pattern called the <strong>transactional outbox</strong>, and it's beautifully simple: don't write to two systems. Write to <em>one</em>.</p>
+
+<pre class="code-block">BEGIN;
+  INSERT INTO users  (...);
+  INSERT INTO outbox (topic, payload, ...);   <span class="highlight">-- "please send this event later"</span>
+COMMIT;                                        <span class="highlight">-- both rows, or neither</span></pre>
+
+                <p>The event is saved as a row in the <em>same</em> database, in the <em>same</em> transaction as the user. If you crash, both writes roll back together. Then a small separate process, the <strong>outbox relay</strong>, reads unsent rows, publishes them to Kafka, and marks them as sent. If Kafka is down, the rows just wait patiently. Signups keep working.</p>
+
+                <p>But there's a twist. What if the relay crashes <em>after</em> Kafka accepted the message but <em>before</em> marking the row as sent? It wakes up, sees the row still unsent, and sends it again. The outbox guarantees <strong>at-least-once</strong> delivery, not exactly-once. So the email service has to be <strong>idempotent</strong>: every event has a unique ID, and the email service remembers which IDs it already handled. Seen it before? Skip it.</p>
+
+                <h3>The scoreboard</h3>
+
+                <p>The signup page reconciles the user table against the emails actually sent and counts the damage. These are the real numbers from my test runs:</p>
+
+                <table>
+                    <thead>
+                        <tr><th>Setup</th><th>Result</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Save first, then publish, crash every time</td><td><strong>3 lost emails</strong> out of 3</td></tr>
+                        <tr><td>Publish first, then save, crash every time</td><td><strong>3 ghost emails</strong> out of 3</td></tr>
+                        <tr><td>Outbox, crash every time</td><td>Nothing saved, nothing sent. <strong>Consistent.</strong></td></tr>
+                        <tr><td>Outbox, relay crashing 30% of the time, idempotency on</td><td>10 users, <strong>exactly 10 emails</strong> (6 duplicates caught and skipped)</td></tr>
+                        <tr><td>Same, idempotency off</td><td>10 users, 13 emails. Two people got the same email twice.</td></tr>
+                    </tbody>
+                </table>
+
+                <p>And because everything is instrumented, the lost, ghost and duplicate counts are metrics too. In naive mode you can literally watch the "lost emails" line climb in Grafana, which is a strangely satisfying way to see a bug.</p>
+
+                <div class="callout">
+                    <h4>Lesson</h4>
+                    <p>Any time your code writes to a database <em>and</em> sends a message, ask yourself: "what happens if we crash right between these two lines?" If the answer is "something bad, quietly", you have a dual write. The outbox pattern plus an idempotent consumer fixes it, and it only costs one extra table.</p>
+                </div>
+
+                <h2>The bugs I hit along the way (the honest section)</h2>
+
+                <p>Building a lab to demonstrate bugs is a great way to discover your own. Three that are worth sharing:</p>
+
+                <ul>
+                    <li><strong>The database spans vanished.</strong> Tracing was on, but no SQL ever showed up in the traces. It turned out that passing <code>cursor_factory=RealDictCursor</code> to <code>conn.cursor()</code> quietly bypasses the OpenTelemetry Postgres instrumentation. Setting it once on the connection pool instead fixed it. Zero errors, zero warnings, just missing data. The worst kind of bug.</li>
+                    <li><strong>Traces snapped in half at Kafka.</strong> The Kafka instrumentation creates a "receive" span, but doesn't keep it active while your code handles the message. So every consumer started a brand-new trace, and my beautiful end-to-end waterfall was two sad halves. The fix: read the <code>traceparent</code> from the Kafka message headers and start the handler span with it. Now one signup is one trace with 15 spans across 3 services, including the async hop through the outbox. (Yes, I store the trace context in the outbox row too, so the trace survives sitting in a database table.)</li>
+                    <li><strong>My outbox relay got stuck in a loop.</strong> My first version published rows in batches of 10, one transaction per batch. With the relay crashing 30% of the time per row, a batch of 10 only gets through 0.7<sup>10</sup> ≈ 3% of the time. Every crash rolled back the "sent" marks for the whole batch, so the relay kept re-sending the same 10 emails forever. Ten users stuck pending, nineteen duplicates caught. Switching to one row per transaction fixed it instantly. I built a demo of a reliability pattern and immediately wrote a reliability bug. Peak engineering.</li>
+                </ul>
+
+                <h2>Want to try it?</h2>
+
+                <p>The whole lab is open source: <a href="https://github.com/andreflino/otel-lab">github.com/andreflino/otel-lab</a>. It's one <code>docker compose up</code>, needs about 2.5 GB of RAM, and expects a Tempo + Loki + Prometheus stack to send data to (the README explains the few settings that matter). It comes with a list of exercises: find the slow query, break the cache, kill a consumer and watch the lag, take Kafka down and watch the outbox hold the line.</p>
+
+                <h2>Where it stands now</h2>
+
+                <ul>
+                    <li>Every server in the house, Proxmox hosts included, sending metrics and logs to one monitoring VM</li>
+                    <li>A shop that traces a click all the way through HTTP, RabbitMQ, Kafka, Redis and Postgres</li>
+                    <li>A slow query, a cache, a queue and an event log, each with an "off" switch and a way to break it</li>
+                    <li>A signup flow that demonstrates the dual-write bug and its fix, with the damage measured in Grafana</li>
+                    <li>A robot that has placed over a thousand orders and never paid for a single one</li>
+                </ul>
+
+                <p>The point of all this isn't the fake shop. It's that the patterns and tools you use at work, end-to-end tracing, caching, event streaming, outboxes, idempotency, all fit on a couple of cheap boxes at home, where you're allowed to break them as many times as you like. And breaking things on purpose is still the fastest way I know to understand how they work.</p>
+            </div>
+        </article>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 fortunato.pro - Built with AWS Free Tier</p>
+        </div>
+    </footer>
+
+    <script src="../js/theme.js"></script>
+</body>
+</html>

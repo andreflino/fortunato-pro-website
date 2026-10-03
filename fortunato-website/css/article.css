@@ -109,6 +109,35 @@
     margin: 24px 0;
 }
 
+.article-content pre.code-block {
+    white-space: pre;
+}
+
+/* Article Tables */
+.article-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 24px 0;
+    font-size: 15px;
+    display: block;
+    overflow-x: auto;
+}
+
+.article-content th,
+.article-content td {
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+    color: var(--text-secondary);
+}
+
+.article-content th {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
 /* Article Responsive Design */
 @media (max-width: 768px) {
     .article-title {

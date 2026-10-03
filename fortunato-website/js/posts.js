@@ -4,6 +4,14 @@
 // Posts configuration - add new posts here
 const POSTS = [
     {
+        id: 'homelab-observability-otel-dual-write',
+        title: 'I Built a Fake Shop in My Homelab to Watch It Break (On Purpose)',
+        date: '2026-10-03',
+        timestamp: '2026-10-03T23:59:00.000Z',
+        tags: ['Homelab', 'OpenTelemetry', 'Observability', 'Kafka', 'SystemDesign'],
+        excerpt: 'End-to-end tracing with OpenTelemetry across Flask, RabbitMQ, Kafka, Redis and Postgres, a slow query hiding in two million rows, and the dual-write bug that quietly loses your users\' emails, plus the outbox pattern that fixes it. All on two cheap boxes at home.'
+    },
+    {
         id: 'homelab-rebuild-proxmox-zfs',
         title: 'From a Dead NAS to a Hardened Media Stack: A Homelab Rebuild',
         date: '2026-09-14',
