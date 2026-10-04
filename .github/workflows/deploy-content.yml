@@ -1,0 +1,72 @@
+name: Deploy Content Only
+
+# Manual escape hatch: publishes website files without running terraform apply.
+# Use it when the infrastructure step is blocked (e.g. an expired ACM certificate)
+# but the S3 bucket and CloudFront distribution already exist.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-content:
+    name: Upload Website Files
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: '1.5.0'
+        terraform_wrapper: false
+
+    - name: Configure AWS
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+        role-session-name: GitHubActions
+        aws-region: us-east-1
+
+    # Read-only: init the backend and read existing outputs. No plan, no apply.
+    - name: Get Outputs
+      id: terraform
+      working-directory: terraform
+      run: |
+        terraform init -input=false
+        echo "website_url=$(terraform output -raw website_url)" >> $GITHUB_OUTPUT
+        echo "s3_bucket=$(terraform output -raw s3_bucket_name)" >> $GITHUB_OUTPUT
+
+        # Get CloudFront distribution ID (may not exist)
+        DISTRIBUTION_ID=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
+        echo "distribution_id=$DISTRIBUTION_ID" >> $GITHUB_OUTPUT
+
+    - name: Upload Website Files
+      run: |
+        echo " Uploading website files to S3..."
+        aws s3 sync fortunato-website/ s3://${{ steps.terraform.outputs.s3_bucket }}/ \
+          --delete \
+          --exclude "*.md"
+
+    - name: Invalidate CloudFront Cache
+      if: steps.terraform.outputs.distribution_id != ''
+      run: |
+        echo " Invalidating CloudFront cache..."
+        aws cloudfront create-invalidation \
+          --distribution-id ${{ steps.terraform.outputs.distribution_id }} \
+          --paths "/*"
+
+    - name: Test Website
+      run: |
+        sleep 10
+        URL="${{ steps.terraform.outputs.website_url }}"
+        if curl -f -s "$URL" > /dev/null; then
+          echo " Website is accessible: $URL"
+        else
+          echo " Website may still be propagating: $URL"
+        fi
